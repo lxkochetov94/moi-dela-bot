@@ -1,0 +1,8 @@
+.env
+.env.*
+__pycache__/
+.pytest_cache/
+*.py[cod]
+.venv/
+*.xlsx
+*.zip
