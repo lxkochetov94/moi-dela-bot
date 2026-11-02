@@ -118,8 +118,10 @@ class Bot:
         # if an earlier serverless invocation lost the dialog state.
         kinds={"💼 Работа":"work", "Работа":"work", "🏠 Личное":"personal", "Личное":"personal"}
         chosen_kind=kinds.get(normalized)
+        if chosen_kind and self.db.get_state(owner).get("stage") not in (None, "kind"):
+            # "Работа" can also be the actual task title or a note.
+            chosen_kind=None
         if chosen_kind:
-            # No YDB SELECT before a simple choice: one state write and reply.
             draft={"kind":chosen_kind,"reminders":[],"notes":[]}
             self.db.put_state(owner,{"stage":"title","draft":draft})
             self.send(chat,"Что нужно сделать?",keyboard={"remove_keyboard":True})
@@ -210,16 +212,15 @@ class Bot:
             if not t or t.get("deleted"):self.db.put_state(owner,{});return
             try:date=parse(text)
             except ValueError as e:self.send(chat,str(e));return
+            if any(rem["at"]>date for rem in t["reminders"]):
+                self.send(chat,"Этот срок раньше одного из напоминаний. Срок не изменён. Сначала скорректируй даты в «⚙️ Изменить параметры» → «🔔 Напоминания».")
+                return
+            if not t["reminders"] and t["status"]!="done":
+                self.send(chat,"Для задачи со сроком нужно хотя бы одно напоминание. Сначала добавь напоминание в параметрах.")
+                return
             t["deadline"]=date;t["updated"]=self.clock()
-            # Never silently keep a reminder that will fire after the new deadline.
-            for rem in list(t["reminders"]):
-                if rem["at"]>date:
-                    self.db.delete_reminder({"at":rem["at"],"id":rem["id"]})
-                    t["reminders"].remove(rem)
             self.db.put_task(owner,t);self.db.put_state(owner,{})
             self.view(chat,t)
-            if not t["reminders"]:
-                self.send(chat,"У этой задачи теперь нет напоминаний. Добавь хотя бы одно через «Изменить параметры».")
         else:
             # Unknown/old stage: never leave the user stuck with no response.
             self.db.put_state(owner,{})
@@ -312,6 +313,9 @@ class Bot:
         if parts[0]=="dr":
             t=self.db.get_task(owner,parts[1]);
             if not t or t.get("deleted"):return
+            if t.get("deadline") and t["status"]!="done" and len(t["reminders"])<=1:
+                self.send(chat,"Для задачи со сроком нужно хотя бы одно напоминание. Добавь новое, прежде чем удалять последнее.",edit=edit)
+                return
             for reminder in list(t["reminders"]):
                 if reminder["id"]==parts[2]:
                     self.db.delete_reminder({"at":reminder["at"],"id":reminder["id"]})
@@ -355,6 +359,7 @@ class Bot:
     def set_status(self,owner,chat,task_id,status,edit=None):
         t=self.db.get_task(owner,task_id)
         if not t or t.get("deleted"):return
+        was_done=t["status"]=="done"
         t["status"]=status
         t["completed"]=self.clock() if status=="done" else None
         t["updated"]=self.clock()
@@ -362,6 +367,11 @@ class Bot:
         if status=="done":
             for rem in t["reminders"]:
                 self.db.delete_reminder({"at":rem["at"],"id":rem["id"]})
+        elif was_done:
+            # Reopening a finished task restores only future reminders.
+            for rem in t["reminders"]:
+                if rem["at"]>self.clock():
+                    self.db.put_reminder({"at":rem["at"],"id":rem["id"],"owner":owner,"task_id":t["id"]})
         self.view(chat,t,edit)
 
     def update(self, event, platform="tg"):
