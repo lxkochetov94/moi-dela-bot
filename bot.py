@@ -100,14 +100,33 @@ class Bot:
             self.send(chat,"Выбери действие в меню 👇",menu=True)
 
     def text(self, owner, chat, text):
-        if text.startswith("/start") or text.startswith("/cancel"):
-            self.menu(owner,chat,text);return
-        if text in ("➕ Добавить задачу","📋 Мои задачи","📊 Скачать Excel"):
-            self.menu(owner,chat,text);return
+        # Global commands work even with an unfinished draft.
+        # Emoji variation selectors and extra whitespace in menu labels are ignored.
+        text = " ".join(str(text).strip().split())
+        command = text.split(" ", 1)[0].split("@", 1)[0].lower() if text.startswith("/") else ""
+        if command in ("/start", "/add", "/tasks", "/excel", "/cancel", "/myid"):
+            self.menu(owner, chat, command)
+            return
+        normalized = text.replace("\ufe0f", "")
+        if normalized in ("➕ Добавить задачу", "Добавить задачу"):
+            self.menu(owner,chat,"/add");return
+        if normalized in ("📋 Мои задачи", "Мои задачи"):
+            self.menu(owner,chat,"/tasks");return
+        if normalized in ("📊 Скачать Excel", "Скачать Excel"):
+            self.menu(owner,chat,"/excel");return
         state=self.db.get_state(owner)
         stage=state.get("stage")
         if not stage:
             self.menu(owner,chat,text);return
+        if stage=="kind":
+            self.send(chat,"Это по работе или для себя?",buttons([("💼 Работа","new:work"),("🏠 Личное","new:personal")]))
+            return
+        if stage=="more":
+            self.send(chat,"Ещё одно напоминание?",buttons([("➕ Ещё","rem:more"),("✅ Готово","rem:done")]))
+            return
+        if stage=="priority":
+            self.send(chat,"Насколько важно?",buttons([("🔴 Срочно","priority:red"),("🟡 Важно","priority:yellow"),("🟢 Не горит","priority:green")]))
+            return
         if stage=="title":
             if not text.strip(): self.send(chat,"Напиши, что нужно сделать.");return
             state["draft"]["title"]=text.strip()[:240]
@@ -169,6 +188,10 @@ class Bot:
             self.view(chat,t)
             if not t["reminders"]:
                 self.send(chat,"У этой задачи теперь нет напоминаний. Добавь хотя бы одно через «Изменить параметры».")
+        else:
+            # Unknown/old stage: never leave the user stuck with no response.
+            self.db.put_state(owner,{})
+            self.send(chat,"Продолжим с главного меню 👇",menu=True)
 
     def callback(self,owner,chat,data,edit=None):
         parts=data.split(":")
