@@ -124,7 +124,11 @@ def run(db_path=None, token=None, poll_timeout=5, check_input=True):
 
 if __name__ == "__main__":
     try:
-        run()
+        if "--self-test" in sys.argv:
+            from local_selftest import run_self_test
+            run_self_test()
+        else:
+            run()
     except KeyboardInterrupt:
         print("\nБот остановлен. Задачи сохранены. Напоминания возобновятся после запуска.")
     except Exception as exc:
