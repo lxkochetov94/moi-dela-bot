@@ -13,6 +13,8 @@ import hmac
 import json
 import logging
 import os
+import time
+import urllib.error
 from bot import Bot
 from storage import YDBStore
 from telegram_api import Telegram
@@ -70,9 +72,48 @@ def healthcheck():
                 stages[stage]=stages.get(stage,0)+1
             except Exception:
                 stages["unreadable"]=stages.get("unreadable",0)+1
-        return {"statusCode":200, "body":json.dumps({"ydb_roundtrip":"ok","sample_dialog_stages":stages})}
+        diagnostic = db.get_state("diagnostics:telegram_error")
+        safe_error = {k: diagnostic[k] for k in ("category", "http_status", "timestamp")
+                      if k in diagnostic}
+        return {"statusCode":200, "body":json.dumps({
+            "ydb_roundtrip":"ok", "sample_dialog_stages":stages,
+            "last_transport_error":safe_error or None,
+            "notice":"No messages, tokens, user IDs, or task text returned"
+        })}
     finally:
         db.put_state(owner,{})
+
+
+def transportcheck():
+    """Read-only Telegram API probe using exactly the deployed proxy settings."""
+    started = time.monotonic()
+    try:
+        result = Telegram().call("getMe", {})
+        return {"statusCode": 200, "body": json.dumps({
+            "telegram_via_cloudflare":"ok" if result and result.get("is_bot") else "unexpected",
+            "elapsed_ms": round((time.monotonic()-started)*1000)
+        })}
+    except Exception as exc:
+        # Do not include URL, token, headers, usernames, request or response text.
+        status = exc.code if isinstance(exc, urllib.error.HTTPError) else None
+        return {"statusCode": 200, "body": json.dumps({
+            "telegram_via_cloudflare":"failed",
+            "error_category":type(exc).__name__,
+            "http_status": status,
+            "elapsed_ms": round((time.monotonic()-started)*1000)
+        })}
+
+
+def store_safe_error(exc):
+    """Record only a broad error class/status so locked-down logging isn't required."""
+    try:
+        diagnostic={"stage":"transport_error","category":type(exc).__name__,
+                    "timestamp":int(time.time())}
+        if isinstance(exc, urllib.error.HTTPError):
+            diagnostic["http_status"]=exc.code
+        get_bot().db.put_state("diagnostics:telegram_error",diagnostic)
+    except Exception:
+        log.warning("Unable to persist sanitized transport diagnostics")
 
 
 def handle_http(event):
@@ -111,6 +152,8 @@ def handler(event, context):
             return install_telegram_webhook()
         if event.get("action") == "healthcheck":
             return healthcheck()
+        if event.get("action") == "transportcheck":
+            return transportcheck()
         if event.get("messages") and any(
             item.get("event_metadata", {}).get("event_type", "").endswith("TimerMessage")
             for item in event["messages"]
@@ -122,7 +165,8 @@ def handler(event, context):
             get_bot().tick()  # Cloud Console test / timer compatibility
         else:
             log.info("Ignoring unsupported event")
-    except Exception:
+    except Exception as exc:
         log.exception("Bot event failed")
+        store_safe_error(exc)
         raise
     return {"statusCode": 200, "body": "OK"}
