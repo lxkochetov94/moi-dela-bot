@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime
 from dates import fmt,parse
 from exporter import excel
-from telegram_api import buttons
+from telegram_api import buttons, reply_buttons
 
 KIND={"work":"💼 Работа","personal":"🏠 Личное"}
 PRIO={"red":"🔴 Срочно","yellow":"🟡 Важно","green":"🟢 Не горит"}
@@ -47,7 +47,7 @@ class Bot:
 
     def create(self, owner, chat):
         self.db.put_state(owner,{"stage":"kind","draft":{"reminders":[],"notes":[]}})
-        self.send(chat,"Это по работе или для себя?",buttons([("💼 Работа","new:work"),("🏠 Личное","new:personal")]))
+        self.send(chat,"Это по работе или для себя?",reply_buttons(["💼 Работа", "🏠 Личное"]))
 
     def save_draft(self, owner, chat, state):
         draft=state["draft"]
@@ -60,7 +60,7 @@ class Bot:
         for rem in task["reminders"]:
             self.db.put_reminder({"at":rem["at"],"id":rem["id"],"owner":owner,"task_id":task["id"]})
         self.db.put_state(owner,{})
-        self.send(chat,"✅ Задача сохранена!")
+        self.send(chat,"✅ Задача сохранена!",menu=True)
         self.view(chat,task)
 
     def list_view(self, owner, chat, kind="active", page=0, edit=None):
@@ -119,27 +119,57 @@ class Bot:
         if not stage:
             self.menu(owner,chat,text);return
         if stage=="kind":
-            self.send(chat,"Это по работе или для себя?",buttons([("💼 Работа","new:work"),("🏠 Личное","new:personal")]))
+            # Reply keyboard clicks arrive as text messages, not callback events.
+            kinds={"💼 Работа":"work", "Работа":"work", "🏠 Личное":"personal", "Личное":"personal"}
+            kind=kinds.get(normalized)
+            if kind:
+                state["draft"]["kind"]=kind; state["stage"]="title"
+                self.db.put_state(owner,state)
+                self.send(chat,"Что нужно сделать?",keyboard={"remove_keyboard":True})
+            else:
+                self.send(chat,"Это по работе или для себя?",reply_buttons(["💼 Работа", "🏠 Личное"]))
             return
         if stage=="more":
-            self.send(chat,"Ещё одно напоминание?",buttons([("➕ Ещё","rem:more"),("✅ Готово","rem:done")]))
+            if normalized in ("➕ Ещё", "Ещё"):
+                state["stage"]="reminder"; self.db.put_state(owner,state)
+                self.send(chat,"Когда напомнить ещё?\nНапример: 5.11 11:00",keyboard={"remove_keyboard":True})
+            elif normalized in ("✅ Готово", "Готово"):
+                state["stage"]="priority"; self.db.put_state(owner,state)
+                self.send(chat,"Насколько важно?",reply_buttons(["🔴 Срочно", "🟡 Важно", "🟢 Не горит"]))
+            else:
+                self.send(chat,"Ещё одно напоминание?",reply_buttons(["➕ Ещё", "✅ Готово"]))
             return
         if stage=="priority":
-            self.send(chat,"Насколько важно?",buttons([("🔴 Срочно","priority:red"),("🟡 Важно","priority:yellow"),("🟢 Не горит","priority:green")]))
+            priorities={"🔴 Срочно":"red", "Срочно":"red", "🟡 Важно":"yellow", "Важно":"yellow", "🟢 Не горит":"green", "Не горит":"green"}
+            priority=priorities.get(normalized)
+            if priority:
+                state["draft"]["priority"]=priority
+                self.save_draft(owner,chat,state)
+            else:
+                self.send(chat,"Насколько важно?",reply_buttons(["🔴 Срочно", "🟡 Важно", "🟢 Не горит"]))
             return
         if stage=="title":
             if not text.strip(): self.send(chat,"Напиши, что нужно сделать.");return
             state["draft"]["title"]=text.strip()[:240]
             state["stage"]="deadline"
             self.db.put_state(owner,state)
-            self.send(chat,"Какой срок?\nНапример: 6.11 17:00",buttons([("Без срока","date:none")]))
+            self.send(chat,"Какой срок?\nНапример: 6.11 17:00",reply_buttons(["Без срока"]))
         elif stage=="deadline":
+            if normalized=="Без срока":
+                state["draft"]["deadline"]=None;state["stage"]="reminder"
+                self.db.put_state(owner,state)
+                self.send(chat,"🔔 Когда напомнить?\nНапример: сегодня в 18:00",reply_buttons(["Без напоминания"]))
+                return
             try: date=parse(text)
             except ValueError as e: self.send(chat,f"{e}. Попробуй ещё раз.");return
             state["draft"]["deadline"]=date;state["stage"]="reminder"
             self.db.put_state(owner,state)
             self.send(chat,"🔔 Когда напомнить?\nНапример: 5.11 11:00")
         elif stage in ("reminder","edit_reminder"):
+            if stage=="reminder" and normalized=="Без напоминания" and not state["draft"].get("deadline"):
+                state["stage"]="priority";self.db.put_state(owner,state)
+                self.send(chat,"Насколько важно?",reply_buttons(["🔴 Срочно", "🟡 Важно", "🟢 Не горит"]))
+                return
             try: date=parse(text)
             except ValueError as e: self.send(chat,f"{e}. Попробуй ещё раз.");return
             if stage=="reminder":
@@ -150,7 +180,7 @@ class Bot:
                     self.send(chat,"Это время уже добавлено. Укажи другое.");return
                 draft["reminders"].append({"id":make_id(),"at":date})
                 state["stage"]="more";self.db.put_state(owner,state)
-                self.send(chat,f"🔔 {fmt(date)}\nЕщё напоминание?",buttons([("➕ Ещё","rem:more"),("✅ Готово","rem:done")]))
+                self.send(chat,f"🔔 {fmt(date)}\nЕщё напоминание?",reply_buttons(["➕ Ещё", "✅ Готово"]))
             else:
                 t=self.db.get_task(owner,state["id"])
                 if not t or t.get("deleted"):
@@ -340,8 +370,15 @@ class Bot:
             chat=msg.get("chat",{}).get("id",owner)
             if msg.get("chat",{}).get("type","private")!="private":return
             if not self.allowed(owner,chat):return
-            self.tg.ack(q["id"])
-            self.callback(owner,chat,q.get("data",""),msg.get("message_id"))
+            # Process the action even if a stale callback cannot be acknowledged.
+            try:
+                self.callback(owner,chat,q.get("data",""),msg.get("message_id"))
+            finally:
+                try:
+                    self.tg.ack(q["id"])
+                except Exception:
+                    import logging
+                    logging.getLogger(__name__).warning("Callback acknowledgement failed")
         elif "message" in event:
             q=event["message"]
             if q.get("chat",{}).get("type")!="private":return
