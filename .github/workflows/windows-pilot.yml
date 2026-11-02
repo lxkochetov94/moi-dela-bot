@@ -11,6 +11,7 @@ on:
       - 'exporter.py'
       - 'telegram_api.py'
       - 'local_requirements.txt'
+      - 'tests/**'
       - '.github/workflows/windows-pilot.yml'
   workflow_dispatch:
 
