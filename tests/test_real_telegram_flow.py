@@ -81,5 +81,5 @@ def test_telegram_text_only_work_task_to_reminder():
     tick = Bot(db, api, clock=lambda: task["reminders"][0]["at"])
     tick.tick(platform="tg")
     assert len(api.messages) == 1
-    assert api.messages[0]["text"].startswith("🔔 Подготовить письмо")
+    assert api.messages[0]["text"].startswith("🔔 Пора: Подготовить письмо")
     assert db.due_reminders(task["reminders"][0]["at"]) == []
