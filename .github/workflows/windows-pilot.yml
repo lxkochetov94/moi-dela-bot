@@ -6,6 +6,7 @@ on:
     paths:
       - 'local_run.py'
       - 'local_sqlite.py'
+      - 'local_selftest.py'
       - 'bot.py'
       - 'dates.py'
       - 'exporter.py'
@@ -32,6 +33,9 @@ jobs:
         run: python -m pytest -q
       - name: Build stand-alone EXE
         run: python -m PyInstaller --noconfirm --onefile --console --clean --collect-all tzdata --name MoiDela local_run.py
+      - name: Verify compiled executable in offline mode
+        shell: pwsh
+        run: .\dist\MoiDela.exe --self-test
       - name: Confirm Windows binary exists
         shell: pwsh
         run: |
