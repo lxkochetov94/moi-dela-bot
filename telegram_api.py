@@ -11,10 +11,23 @@ class Telegram:
         self.token = token or os.environ["TELEGRAM_BOT_TOKEN"]
 
     def call(self, method, data=None, file_bytes=None, filename=None):
-        url = f"https://api.telegram.org/bot{self.token}/{method}"
+        proxy_url = os.environ.get("TELEGRAM_API_PROXY_URL", "").strip().rstrip("/")
+        if proxy_url:
+            if not proxy_url.startswith("https://"):
+                raise ValueError("TELEGRAM_API_PROXY_URL must use HTTPS")
+            proxy_key = os.environ.get("TELEGRAM_PROXY_KEY", "")
+            if not proxy_key:
+                raise ValueError("TELEGRAM_PROXY_KEY is required when proxy is enabled")
+            # BotFather token goes through an HTTPS header, never the proxy request URL.
+            url = f"{proxy_url}/{method}"
+            headers = {"X-Moi-Dela-Proxy-Key": proxy_key,
+                       "X-Moi-Dela-Bot-Token": self.token}
+        else:
+            url = f"https://api.telegram.org/bot{self.token}/{method}"
+            headers = {}
         if file_bytes is None:
             body = json.dumps(data or {}, ensure_ascii=False).encode("utf-8")
-            request = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
+            request = urllib.request.Request(url, data=body, headers={**headers, "Content-Type": "application/json"})
         else:
             boundary = "----moi-dela-" + uuid.uuid4().hex
             parts = []
@@ -24,7 +37,7 @@ class Telegram:
                           'Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\r\n\r\n').encode())
             parts.append(file_bytes)
             parts.append(f'\r\n--{boundary}--\r\n'.encode())
-            request = urllib.request.Request(url, data=b''.join(parts), headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
+            request = urllib.request.Request(url, data=b''.join(parts), headers={**headers, "Content-Type": f"multipart/form-data; boundary={boundary}"})
         with urllib.request.urlopen(request, timeout=15) as response:
             payload = json.load(response)
         if not payload.get("ok"):
