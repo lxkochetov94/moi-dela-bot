@@ -47,12 +47,12 @@ class Telegram:
     def send(self, chat, text, keyboard=None, menu=False, edit=None):
         args = {"chat_id": chat, "text": text, "disable_web_page_preview": True}
         if keyboard is not None:
-            args["reply_markup"] = {"inline_keyboard": keyboard}
+            args["reply_markup"] = keyboard if isinstance(keyboard,dict) else {"inline_keyboard": keyboard}
         if menu:
             args["reply_markup"] = {"keyboard": [[{"text":"➕ Добавить задачу"}],
                                                   [{"text":"📋 Мои задачи"}, {"text":"📊 Скачать Excel"}]],
                                     "resize_keyboard": True, "is_persistent": True}
-        if edit is not None and not menu:
+        if edit is not None and not menu and not (isinstance(keyboard,dict) and "keyboard" in keyboard):
             try:
                 return self.call("editMessageText", {**args, "message_id": edit})
             except Exception:
@@ -69,3 +69,9 @@ class Telegram:
 def buttons(*rows):
     """Rows of (label, data) pairs; compact callback payloads (< 64 bytes)."""
     return [[{"text": label, "callback_data": code} for label, code in row] for row in rows]
+
+
+def reply_buttons(*rows):
+    """Native Telegram reply keyboard: clicks arrive as text messages."""
+    return {"keyboard": [[{"text": label} for label in row] for row in rows],
+            "resize_keyboard": True, "one_time_keyboard": True}
