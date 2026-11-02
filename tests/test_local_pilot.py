@@ -167,3 +167,37 @@ def test_cancel_and_no_spurious_task_after_restart(tmp_path):
     again = SQLiteStore(path)
     assert again.list_tasks("tg:4321") == []
     again.close()
+
+
+def test_deadline_edit_does_not_silently_discard_reminders(tmp_path):
+    db = SQLiteStore(tmp_path / "db.sqlite3")
+    api = FakeTelegram()
+    bot = Bot(db, api)
+    def say(text):
+        bot.update(update(1, text))
+    for text in ("/add", "💼 Работа", "Сдать отчёт",
+                 "6.11.2099 17:00", "5.11.2099 11:00",
+                 "✅ Готово", "🔴 Срочно"):
+        say(text)
+    task = db.list_tasks("tg:4321")[0]
+    tid = task["id"]
+    original_deadline = task["deadline"]
+    reminder_id = task["reminders"][0]["id"]
+
+    bot.callback("tg:4321", 4321, f"pd:{tid}")
+    say("4.11.2099 16:00")  # Earlier than the existing reminder.
+    task = db.get_task("tg:4321", tid)
+    assert task["deadline"] == original_deadline
+    assert task["reminders"][0]["id"] == reminder_id
+    assert any("Срок не изменён" in r[1] for r in api.sent)
+
+    bot.callback("tg:4321", 4321, f"dr:{tid}:{reminder_id}")
+    assert len(db.get_task("tg:4321", tid)["reminders"]) == 1
+    assert len(db.due_reminders(9999999999)) == 1
+
+    bot.callback("tg:4321", 4321, f"done:{tid}")
+    assert db.due_reminders(9999999999) == []
+    bot.callback("tg:4321", 4321, f"st:{tid}:in_progress")
+    # Since these are future reminders, reopening restores the pending queue.
+    assert len(db.due_reminders(9999999999)) == 1
+    db.close()
