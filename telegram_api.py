@@ -1,6 +1,9 @@
 """Small Telegram Bot API client without long-polling, frameworks or servers."""
 import json
 import os
+import socket
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
@@ -38,11 +41,24 @@ class Telegram:
             parts.append(file_bytes)
             parts.append(f'\r\n--{boundary}--\r\n'.encode())
             request = urllib.request.Request(url, data=b''.join(parts), headers={**headers, "Content-Type": f"multipart/form-data; boundary={boundary}"})
-        with urllib.request.urlopen(request, timeout=15) as response:
-            payload = json.load(response)
-        if not payload.get("ok"):
-            raise RuntimeError("Telegram API returned an error")
-        return payload.get("result")
+        # Transient failures between Yandex and Cloudflare must not silently
+        # break the wizard after its state has already been persisted.
+        # One bounded retry only: more could spam duplicate Telegram messages.
+        # HTTP 4xx (except 429) are configuration/payload errors, never retried.
+        for attempt in range(2):
+            try:
+                with urllib.request.urlopen(request, timeout=10) as response:
+                    payload = json.load(response)
+                if not payload.get("ok"):
+                    raise RuntimeError("Telegram API returned an error")
+                return payload.get("result")
+            except urllib.error.HTTPError as exc:
+                if exc.code not in (429, 500, 502, 503, 504) or attempt:
+                    raise
+            except (urllib.error.URLError, TimeoutError, socket.timeout):
+                if attempt:
+                    raise
+            time.sleep(0.35)
 
     def send(self, chat, text, keyboard=None, menu=False, edit=None):
         args = {"chat_id": chat, "text": text, "disable_web_page_preview": True}
