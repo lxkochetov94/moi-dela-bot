@@ -106,7 +106,7 @@ def test_due_reminder_sent_by_scheduler():
     b.clock=lambda:due
     b.tick()
     assert len(s.reminders)==0
-    assert "🔔 Подготовить КП" in tg.sent[-1]["text"]
+    assert "🔔 Пора: Подготовить КП" in tg.sent[-1]["text"]
     assert any("Позже" in x["text"] for row in tg.sent[-1]["keyboard"] for x in row)
 
 
