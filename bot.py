@@ -119,9 +119,8 @@ class Bot:
         kinds={"💼 Работа":"work", "Работа":"work", "🏠 Личное":"personal", "Личное":"personal"}
         chosen_kind=kinds.get(normalized)
         if chosen_kind:
-            current=self.db.get_state(owner)
-            draft=current.get("draft", {}) if current.get("stage")=="kind" else {}
-            draft.update({"kind":chosen_kind,"reminders":draft.get("reminders", []),"notes":draft.get("notes", [])})
+            # No YDB SELECT before a simple choice: one state write and reply.
+            draft={"kind":chosen_kind,"reminders":[],"notes":[]}
             self.db.put_state(owner,{"stage":"title","draft":draft})
             self.send(chat,"Что нужно сделать?",keyboard={"remove_keyboard":True})
             return
