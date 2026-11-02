@@ -414,7 +414,7 @@ class Bot:
             if not active:
                 self.db.delete_reminder(e)
                 continue
-            message=f"🔔 {t['title']}\n{PRIO[t['priority']]}\n📅 Срок: {fmt(t.get('deadline'))}"
+            message=f"🔔 Пора: {t['title']}\n📅 Срок: {fmt(t.get('deadline'))}"
             self.tg.send(str(e["owner"]).split(":",1)[-1],message,buttons([("✅ Сделано",f"done:{t['id']}"),
                                                       ("⏰ Позже",f"later:{t['id']}")],
                                                      [("Открыть",f"view:{t['id']}")]))
