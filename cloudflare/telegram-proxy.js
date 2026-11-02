@@ -5,7 +5,8 @@
  * Do not add request/header/body logging: these contain personal tasks and credentials.
  */
 const METHODS = new Set([
-  'sendMessage', 'editMessageText', 'answerCallbackQuery', 'sendDocument'
+  'sendMessage', 'editMessageText', 'answerCallbackQuery', 'sendDocument',
+  'getWebhookInfo', 'getMe'
 ]);
 
 export default {
