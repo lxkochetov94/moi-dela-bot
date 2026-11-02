@@ -1,0 +1,43 @@
+name: Telegram bot - test and package
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pytest
+      - name: Run tests
+        run: python -m pytest -q
+      - name: Build deployable Yandex Cloud Function zip
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile, ZIP_DEFLATED
+          sources = sorted(Path('.').glob('*.py')) + [Path('requirements.txt')]
+          assert Path('main.py') in sources
+          with ZipFile('moi-dela-telegram.zip', 'w', ZIP_DEFLATED) as z:
+              for path in sources:
+                  z.write(path, path.name)
+          print('Created Yandex function ZIP:', ', '.join(p.name for p in sources))
+          PY
+      - name: Upload ZIP for Yandex Cloud Functions
+        uses: actions/upload-artifact@v4
+        with:
+          name: moi-dela-telegram-yandex
+          path: moi-dela-telegram.zip
+          if-no-files-found: error
+          retention-days: 30
