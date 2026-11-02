@@ -114,20 +114,23 @@ class Bot:
             self.menu(owner,chat,"/tasks");return
         if normalized in ("📊 Скачать Excel", "Скачать Excel"):
             self.menu(owner,chat,"/excel");return
+        # A native reply button arrives as a text message. Recover gracefully
+        # if an earlier serverless invocation lost the dialog state.
+        kinds={"💼 Работа":"work", "Работа":"work", "🏠 Личное":"personal", "Личное":"personal"}
+        chosen_kind=kinds.get(normalized)
+        if chosen_kind:
+            current=self.db.get_state(owner)
+            draft=current.get("draft", {}) if current.get("stage")=="kind" else {}
+            draft.update({"kind":chosen_kind,"reminders":draft.get("reminders", []),"notes":draft.get("notes", [])})
+            self.db.put_state(owner,{"stage":"title","draft":draft})
+            self.send(chat,"Что нужно сделать?",keyboard={"remove_keyboard":True})
+            return
         state=self.db.get_state(owner)
         stage=state.get("stage")
         if not stage:
             self.menu(owner,chat,text);return
         if stage=="kind":
-            # Reply keyboard clicks arrive as text messages, not callback events.
-            kinds={"💼 Работа":"work", "Работа":"work", "🏠 Личное":"personal", "Личное":"personal"}
-            kind=kinds.get(normalized)
-            if kind:
-                state["draft"]["kind"]=kind; state["stage"]="title"
-                self.db.put_state(owner,state)
-                self.send(chat,"Что нужно сделать?",keyboard={"remove_keyboard":True})
-            else:
-                self.send(chat,"Это по работе или для себя?",reply_buttons(["💼 Работа", "🏠 Личное"]))
+            self.send(chat,"Это по работе или для себя?",reply_buttons(["💼 Работа", "🏠 Личное"]))
             return
         if stage=="more":
             if normalized in ("➕ Ещё", "Ещё"):
