@@ -6,7 +6,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
 
-HEAD = ["Тип", "Задача", "Приоритет", "Статус", "Срок", "Напоминания", "Доп. информация", "Создано", "Сделано"]
+HEAD = ["Тип", "Задача", "Приоритет", "Статус", "Дедлайн", "Напоминания", "Дополнительная информация", "Создано", "Сделано"]
 PRIORITY = {"red":"Срочно", "yellow":"Важно", "green":"Не горит"}
 STATUS = {"not_started":"Не начато", "in_progress":"В работе", "done":"Сделано"}
 
