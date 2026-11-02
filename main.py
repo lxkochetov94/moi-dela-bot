@@ -51,6 +51,30 @@ def install_telegram_webhook():
     return {"statusCode": 200, "body": "Telegram webhook installed"}
 
 
+def healthcheck():
+    """Cloud Shell-only diagnostic; never exposes personal data or secrets."""
+    from uuid import uuid4
+    db=YDBStore()
+    owner="probe:"+uuid4().hex
+    sample={"stage":"probe","draft":{"kind":"work"}}
+    try:
+        db.put_state(owner,sample)
+        found=db.get_state(owner)
+        if found != sample:
+            raise RuntimeError("YDB state roundtrip mismatch")
+        rows=db.query("SELECT state FROM users LIMIT 30;")
+        stages={}
+        for row in rows:
+            try:
+                stage=json.loads(row["state"] or "{}").get("stage","none")
+                stages[stage]=stages.get(stage,0)+1
+            except Exception:
+                stages["unreadable"]=stages.get("unreadable",0)+1
+        return {"statusCode":200, "body":json.dumps({"ydb_roundtrip":"ok","sample_dialog_stages":stages})}
+    finally:
+        db.put_state(owner,{})
+
+
 def handle_http(event):
     if event.get("httpMethod") != "POST":
         return {"statusCode": 405, "body": "Method Not Allowed"}
@@ -85,6 +109,8 @@ def handler(event, context):
             return handle_http(event)
         if event.get("action") == "install_telegram_webhook":
             return install_telegram_webhook()
+        if event.get("action") == "healthcheck":
+            return healthcheck()
         if event.get("messages") and any(
             item.get("event_metadata", {}).get("event_type", "").endswith("TimerMessage")
             for item in event["messages"]
