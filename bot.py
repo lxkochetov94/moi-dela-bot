@@ -118,10 +118,8 @@ class Bot:
         # if an earlier serverless invocation lost the dialog state.
         kinds={"💼 Работа":"work", "Работа":"work", "🏠 Личное":"personal", "Личное":"personal"}
         chosen_kind=kinds.get(normalized)
-        if chosen_kind and self.db.get_state(owner).get("stage") not in (None, "kind"):
-            # "Работа" can also be the actual task title or a note.
-            chosen_kind=None
         if chosen_kind:
+            # Native reply buttons may be used again to change the choice.
             draft={"kind":chosen_kind,"reminders":[],"notes":[]}
             self.db.put_state(owner,{"stage":"title","draft":draft})
             self.send(chat,"Что нужно сделать?",keyboard={"remove_keyboard":True})
