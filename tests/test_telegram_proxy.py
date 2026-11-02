@@ -28,7 +28,7 @@ def test_telegram_private_relay_json_and_document():
         assert req.full_url == 'https://example.workers.dev/sendMessage'
         assert req.get_header('X-moi-dela-bot-token') == '123:abcd'
         assert req.get_header('X-moi-dela-proxy-key') == 'super-secret'
-        assert b'\\xd0' in req.data
+        assert json.loads(req.data.decode('utf-8')) == {'chat_id': 1, 'text': 'Задача'}
         tg.document(1, b'PKfake', 'tasks.xlsx')
         req = urlopen.call_args.args[0]
         assert req.full_url == 'https://example.workers.dev/sendDocument'
