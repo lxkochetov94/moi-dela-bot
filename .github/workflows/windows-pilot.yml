@@ -1,0 +1,45 @@
+name: Moi Dela - Windows app (no cloud)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'local_run.py'
+      - 'local_sqlite.py'
+      - 'bot.py'
+      - 'dates.py'
+      - 'exporter.py'
+      - 'telegram_api.py'
+      - 'local_requirements.txt'
+      - '.github/workflows/windows-pilot.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install requirements
+        run: python -m pip install -r local_requirements.txt pytest pyinstaller tzdata
+      - name: Verify local pilot logic
+        run: python -m pytest -q
+      - name: Build stand-alone EXE
+        run: python -m PyInstaller --noconfirm --onefile --console --clean --collect-all tzdata --name MoiDela local_run.py
+      - name: Confirm Windows binary exists
+        shell: pwsh
+        run: |
+          if (!(Test-Path 'dist\MoiDela.exe')) { throw 'Windows executable was not generated' }
+          Get-Item 'dist\MoiDela.exe' | Select-Object Name,Length
+      - name: Downloadable Windows executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: MoiDela-Windows
+          path: dist/MoiDela.exe
+          if-no-files-found: error
+          retention-days: 30
